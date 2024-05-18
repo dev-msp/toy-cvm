@@ -7,22 +7,22 @@ impl<T: Clone + Hash + PartialEq + Eq + Debug> Element for T {}
 
 /// The main data structure for the [CVM algorithm](https://arxiv.org/abs/2301.10191).
 #[derive(Debug)]
-struct Cvm<T> {
+struct Estimator<T> {
     capacity: usize,
     memory: HashSet<T>,
     rounds: u32,
 }
 
-impl<T: Hash + PartialEq + Eq + Debug> Cvm<T> {
+impl<T: Hash + PartialEq + Eq + Debug> Estimator<T> {
     fn new(capacity: usize) -> Self {
-        Cvm {
+        Estimator {
             capacity,
             memory: HashSet::new(),
             rounds: 0,
         }
     }
 
-    fn should_keep(coin_flips: u32) -> bool {
+    fn permitted(coin_flips: u32) -> bool {
         (0..coin_flips).all(|_| rand::random())
     }
 
@@ -41,17 +41,10 @@ impl<T: Hash + PartialEq + Eq + Debug> Cvm<T> {
     }
 
     fn add(&mut self, value: T) {
-        match self.rounds {
-            0 => {
-                self.memory.insert(value);
-            }
-            n if Self::should_keep(n) => {
-                self.memory.insert(value);
-            }
-            _ if self.memory.contains(&value) => {
-                self.memory.remove(&value);
-            }
-            _ => {}
+        if Self::permitted(self.rounds) {
+            self.memory.insert(value);
+        } else if self.memory.contains(&value) {
+            self.memory.remove(&value);
         }
 
         if self.memory.len() >= self.capacity {
@@ -60,26 +53,26 @@ impl<T: Hash + PartialEq + Eq + Debug> Cvm<T> {
     }
 
     fn sweep(&mut self) {
-        self.memory.retain(|_| Self::should_keep(1));
+        self.memory.retain(|_| Self::permitted(1));
         self.rounds += 1;
     }
 }
 
 /// Not taken from the paper, just me playing around.
-struct CombinedCvm<T> {
-    cvms: Vec<Cvm<T>>,
+struct GroupEstimator<T> {
+    members: Vec<Estimator<T>>,
 }
 
 /// # Panics
 ///
 /// Panics if `len` is 0.
-impl<T: Element> CombinedCvm<T> {
+impl<T: Element> GroupEstimator<T> {
     fn new(capacity: usize, len: usize) -> Self {
         if len == 0 {
             panic!("Length must be greater than 0");
         }
-        CombinedCvm {
-            cvms: (0..len).map(|_| Cvm::new(capacity)).collect(),
+        GroupEstimator {
+            members: (0..len).map(|_| Estimator::new(capacity)).collect(),
         }
     }
 
@@ -93,13 +86,17 @@ impl<T: Element> CombinedCvm<T> {
     }
 
     fn add(&mut self, value: &T) {
-        for c in self.cvms.iter_mut() {
+        for c in self.members.iter_mut() {
             c.add(value.clone());
         }
     }
 
     fn estimate(&self) -> usize {
-        let ests = self.cvms.iter().map(Cvm::estimate).collect::<Vec<_>>();
+        let ests = self
+            .members
+            .iter()
+            .map(Estimator::estimate)
+            .collect::<Vec<_>>();
         // remove min and max
         let mut ests = ests;
         ests.sort();
@@ -126,12 +123,12 @@ where
     I::Item: Element,
 {
     let Some(instances) = test.instances else {
-        let mut c = Cvm::new(test.memory_capacity);
+        let mut c = Estimator::new(test.memory_capacity);
         c.extend(test.data.take(test.sample_size));
         return c.estimate();
     };
 
-    let mut c = CombinedCvm::new(test.memory_capacity, instances);
+    let mut c = GroupEstimator::new(test.memory_capacity, instances);
     c.extend(test.data.take(test.sample_size));
     c.estimate()
 }
