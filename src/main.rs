@@ -13,7 +13,7 @@ struct Estimator<T> {
     rounds: u32,
 }
 
-impl<T: Hash + PartialEq + Eq + Debug> Estimator<T> {
+impl<T: Element> Estimator<T> {
     fn new(capacity: usize) -> Self {
         Estimator {
             capacity,
