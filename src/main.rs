@@ -31,6 +31,15 @@ impl<T: Hash + PartialEq + Eq + Debug> Cvm<T> {
         self.memory.len() * 2_usize.pow(rounds)
     }
 
+    fn extend<I>(&mut self, iter: I)
+    where
+        I: Iterator<Item = T>,
+    {
+        for i in iter {
+            self.add(i);
+        }
+    }
+
     fn add(&mut self, value: T) {
         match self.rounds {
             0 => {
@@ -74,6 +83,15 @@ impl<T: Element> CombinedCvm<T> {
         }
     }
 
+    fn extend<I>(&mut self, iter: I)
+    where
+        I: Iterator<Item = T>,
+    {
+        for i in iter {
+            self.add(&i);
+        }
+    }
+
     fn add(&mut self, value: &T) {
         for c in self.cvms.iter_mut() {
             c.add(value.clone());
@@ -109,19 +127,12 @@ where
 {
     let Some(instances) = test.instances else {
         let mut c = Cvm::new(test.memory_capacity);
-        for d in test.data.take(test.sample_size) {
-            c.add(d);
-        }
-
+        c.extend(test.data.take(test.sample_size));
         return c.estimate();
     };
 
     let mut c = CombinedCvm::new(test.memory_capacity, instances);
-
-    for d in test.data.take(test.sample_size) {
-        c.add(&d);
-    }
-
+    c.extend(test.data.take(test.sample_size));
     c.estimate()
 }
 
