@@ -5,6 +5,23 @@ use rand::{distributions::Uniform, rngs::StdRng, Rng, SeedableRng};
 trait Element: Clone + Hash + PartialEq + Eq + Debug {}
 impl<T: Clone + Hash + PartialEq + Eq + Debug> Element for T {}
 
+trait Estimate {
+    type Elem: Element;
+
+    fn estimate(&self) -> usize;
+
+    fn add(&mut self, value: Self::Elem);
+
+    fn extend<I>(&mut self, iter: I)
+    where
+        I: Iterator<Item = Self::Elem>,
+    {
+        for i in iter {
+            self.add(i);
+        }
+    }
+}
+
 /// The main data structure for the [CVM algorithm](https://arxiv.org/abs/2301.10191).
 #[derive(Debug)]
 struct Estimator<T> {
@@ -26,18 +43,18 @@ impl<T: Element> Estimator<T> {
         (0..coin_flips).all(|_| rand::random())
     }
 
+    fn sweep(&mut self) {
+        self.memory.retain(|_| Self::permitted(1));
+        self.rounds += 1;
+    }
+}
+
+impl<T: Element> Estimate for Estimator<T> {
+    type Elem = T;
+
     fn estimate(&self) -> usize {
         let rounds = if self.rounds > 32 { 32 } else { self.rounds };
         self.memory.len() * 2_usize.pow(rounds)
-    }
-
-    fn extend<I>(&mut self, iter: I)
-    where
-        I: Iterator<Item = T>,
-    {
-        for i in iter {
-            self.add(i);
-        }
     }
 
     fn add(&mut self, value: T) {
@@ -50,11 +67,6 @@ impl<T: Element> Estimator<T> {
         if self.memory.len() >= self.capacity {
             self.sweep();
         }
-    }
-
-    fn sweep(&mut self) {
-        self.memory.retain(|_| Self::permitted(1));
-        self.rounds += 1;
     }
 }
 
@@ -75,21 +87,10 @@ impl<T: Element> GroupEstimator<T> {
             members: (0..len).map(|_| Estimator::new(capacity)).collect(),
         }
     }
+}
 
-    fn extend<I>(&mut self, iter: I)
-    where
-        I: Iterator<Item = T>,
-    {
-        for i in iter {
-            self.add(&i);
-        }
-    }
-
-    fn add(&mut self, value: &T) {
-        for c in self.members.iter_mut() {
-            c.add(value.clone());
-        }
-    }
+impl<T: Element> Estimate for GroupEstimator<T> {
+    type Elem = T;
 
     fn estimate(&self) -> usize {
         let ests = self
@@ -103,6 +104,12 @@ impl<T: Element> GroupEstimator<T> {
         ests.pop();
         ests.remove(0);
         ests.iter().sum::<usize>() / ests.len()
+    }
+
+    fn add(&mut self, value: T) {
+        for c in self.members.iter_mut() {
+            c.add(value.clone());
+        }
     }
 }
 
@@ -137,7 +144,7 @@ fn main() {
     println!(
         "Result: {}",
         run_test(Test {
-            memory_capacity: 1000,
+            memory_capacity: 3000,
             data: StdRng::from_entropy().sample_iter(Uniform::new(0, 10000)),
             sample_size: 30000,
             instances: None
